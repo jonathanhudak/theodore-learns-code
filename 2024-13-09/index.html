@@ -39,6 +39,8 @@
       <option value="grayscale">Grayscale</option>
       <option value="sepia">Sepia</option>
     </select>
+    <button id="switchCamera">Switch Camera</button>
+    <button id="stopPreview">Stop Preview</button>
     <script>
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
@@ -48,26 +50,51 @@
       const filterSelect = document.getElementById("filter");
       const deleteCurrentFrameButton =
         document.getElementById("deleteCurrentFrame");
+      const switchCameraButton = document.getElementById("switchCamera");
+      const stopPreviewButton = document.getElementById("stopPreview");
+      let currentFacingMode = "user";
 
       let frames = [];
+      let isPreviewActive = true;
+      let previewRequestId = null;
 
-      // Access the camera
-      navigator.mediaDevices
-        .getUserMedia({
-          video: {
-            facingMode: "user",
-          },
-        })
-        .then((stream) => {
-          video.srcObject = stream;
-        })
-        .catch((err) => {
-          console.error("Error accessing camera: ", err);
-        });
+      // Function to start the camera
+      function startCamera(facingMode) {
+        navigator.mediaDevices
+          .getUserMedia({
+            video: {
+              facingMode: facingMode,
+            },
+          })
+          .then((stream) => {
+            video.srcObject = stream;
+            video.play(); // Start playing the video
+            // Draw live preview on canvas
+            function drawPreview() {
+              if (isPreviewActive) {
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                previewRequestId = requestAnimationFrame(drawPreview);
+              }
+            }
+            drawPreview();
+          })
+          .catch((err) => {
+            console.error("Error accessing camera: ", err);
+          });
+      }
+
+      // Start with front camera by default
+      startCamera(currentFacingMode);
+
+      // Switch camera
+      switchCameraButton.addEventListener("click", () => {
+        currentFacingMode =
+          currentFacingMode === "user" ? "environment" : "user";
+        startCamera(currentFacingMode);
+      });
 
       // Capture frame
       captureButton.addEventListener("click", () => {
-        context.drawImage(video, 0, 0);
         const frame = canvas.toDataURL("image/png");
         frames.push(frame);
         applyFilter();
@@ -77,7 +104,7 @@
       function applyFilter() {
         const filter = filterSelect.value;
         context.filter = filter === "none" ? "none" : filter + "(100%)";
-        context.drawImage(video, 0, 0);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
 
       // delete current frame
@@ -86,8 +113,30 @@
         context.clearRect(0, 0, canvas.width, canvas.height);
       });
 
+      // Toggle preview
+      stopPreviewButton.addEventListener("click", () => {
+        isPreviewActive = !isPreviewActive;
+        if (isPreviewActive) {
+          stopPreviewButton.textContent = "Stop Preview";
+          drawPreview();
+        } else {
+          stopPreviewButton.textContent = "Start Preview";
+          if (previewRequestId) {
+            cancelAnimationFrame(previewRequestId);
+          }
+        }
+      });
+
       // Play animation
       playButton.addEventListener("click", () => {
+        if (isPreviewActive) {
+          isPreviewActive = false;
+          stopPreviewButton.textContent = "Start Preview";
+          if (previewRequestId) {
+            cancelAnimationFrame(previewRequestId);
+          }
+        }
+
         let index = 0;
         const playInterval = setInterval(() => {
           if (index >= frames.length) {
