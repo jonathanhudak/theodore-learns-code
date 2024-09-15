@@ -31,6 +31,17 @@
         display: none; /* Hide video element */
       }
     </style>
+    <link rel="manifest" href="manifest.json" />
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("/sw.js")
+          .then((reg) => console.log("Service Worker registered", reg))
+          .catch((err) =>
+            console.log("Service Worker registration failed", err)
+          );
+      }
+    </script>
   </head>
   <body>
     <h1>Stop Motion Animation</h1>
@@ -47,6 +58,13 @@
       <option value="sepia">Sepia</option>
     </select>
 
+    <!-- New elements for saving and loading animations -->
+    <input type="text" id="animationName" placeholder="Animation name" />
+    <button id="saveAnimation">Save Animation</button>
+    <select id="loadAnimation">
+      <option value="">Load Animation</option>
+    </select>
+
     <script>
       const video = document.getElementById("video");
       const canvas = document.getElementById("canvas");
@@ -58,6 +76,9 @@
         document.getElementById("deleteCurrentFrame");
       const switchCameraButton = document.getElementById("switchCamera");
       const stopPreviewButton = document.getElementById("stopPreview");
+      const animationNameInput = document.getElementById("animationName");
+      const saveAnimationButton = document.getElementById("saveAnimation");
+      const loadAnimationSelect = document.getElementById("loadAnimation");
       let currentFacingMode = "user";
 
       let frames = [];
@@ -167,6 +188,113 @@
           index++;
         }, 100); // Adjust frame rate here
       });
+
+      let db;
+
+      // Open IndexedDB
+      const dbName = "StopMotionAnimationsDB";
+      const request = indexedDB.open(dbName, 1);
+
+      request.onerror = (event) => {
+        console.error("IndexedDB error:", event.target.error);
+      };
+
+      request.onsuccess = (event) => {
+        db = event.target.result;
+        updateLoadAnimationSelect();
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        const objectStore = db.createObjectStore("animations", {
+          keyPath: "name",
+        });
+      };
+
+      // Function to save animation to IndexedDB
+      function saveAnimation() {
+        const name = animationNameInput.value.trim();
+        if (name && frames.length > 0) {
+          const transaction = db.transaction(["animations"], "readwrite");
+          const objectStore = transaction.objectStore("animations");
+          const animation = { name: name, frames: frames };
+          const request = objectStore.put(animation);
+
+          request.onerror = (event) => {
+            console.error("Error saving animation:", event.target.error);
+            alert("Error saving animation. Please try again.");
+          };
+
+          request.onsuccess = (event) => {
+            updateLoadAnimationSelect();
+            alert("Animation saved successfully!");
+          };
+        } else {
+          alert("Please enter a name and capture at least one frame.");
+        }
+      }
+
+      // Function to load animation from IndexedDB
+      function loadAnimation() {
+        const name = loadAnimationSelect.value;
+        if (name) {
+          const transaction = db.transaction(["animations"], "readonly");
+          const objectStore = transaction.objectStore("animations");
+          const request = objectStore.get(name);
+
+          request.onerror = (event) => {
+            console.error("Error loading animation:", event.target.error);
+            alert("Error loading animation. Please try again.");
+          };
+
+          request.onsuccess = (event) => {
+            const animation = event.target.result;
+            if (animation) {
+              frames = animation.frames;
+              if (frames.length > 0) {
+                const img = new Image();
+                img.src = frames[0];
+                img.onload = () => {
+                  context.clearRect(0, 0, canvas.width, canvas.height);
+                  context.drawImage(img, 0, 0);
+                };
+              }
+            }
+          };
+        }
+      }
+
+      // Function to update the load animation select options
+      function updateLoadAnimationSelect() {
+        const transaction = db.transaction(["animations"], "readonly");
+        const objectStore = transaction.objectStore("animations");
+        const request = objectStore.getAllKeys();
+
+        request.onerror = (event) => {
+          console.error("Error getting animation names:", event.target.error);
+        };
+
+        request.onsuccess = (event) => {
+          const animationNames = event.target.result;
+          loadAnimationSelect.innerHTML =
+            '<option value="">Load Animation</option>';
+          animationNames.forEach((name) => {
+            const option = document.createElement("option");
+            option.value = name;
+            option.textContent = name;
+            loadAnimationSelect.appendChild(option);
+          });
+        };
+      }
+
+      // Event listeners for saving and loading animations
+      saveAnimationButton.addEventListener("click", saveAnimation);
+      loadAnimationSelect.addEventListener("change", loadAnimation);
+
+      // Update load animation select on page load
+      updateLoadAnimationSelect();
+
+      // ... rest of the existing code ...
     </script>
   </body>
 </html>
