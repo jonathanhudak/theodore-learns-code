@@ -37,6 +37,8 @@
 <style>
 	.container {
 		display: grid;
+		max-width: 1200px;
+		margin: auto;
 		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 		gap: 1rem;
 		padding: 1rem;
@@ -47,6 +49,15 @@
 		padding: 0.5rem;
 		text-align: center;
 	}
+
+	:global(.dark .tile a) {
+		color: aqua;
+	}
+
+	:global(.dark .tile a) {
+		color: white;
+	}
+
 	.thumbnail {
 		width: 100%;
 		height: auto;

@@ -1,0 +1,40 @@
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+#game-ui {
+  position: fixed;
+  width: 100%;
+  pointer-events: none;
+}
+
+#dice-roll {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  padding: 10px 20px;
+  background: white;
+  border: 2px solid #333;
+  border-radius: 5px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#turn-display {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px 20px;
+  background: white;
+  border: 2px solid #333;
+  border-radius: 5px;
+}
+
+#dice-display {
+  background: white;
+  color: black;
+  padding: 2rem;
+  font-size: 3rem;
+  display: inline-block;
+}
