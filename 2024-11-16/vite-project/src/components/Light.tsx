@@ -21,4 +21,4 @@ const Light = () => {
   );
 };
 
-export default Light;
+export default Light; 

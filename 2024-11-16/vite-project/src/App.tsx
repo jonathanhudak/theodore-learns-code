@@ -10,25 +10,36 @@ import {
 import ObjectViewer from "./ObjectViewer";
 import Game from "./components/Game";
 import CharacterEditor from "./components/CharacterEditor";
+import SceneList from "./components/SceneList";
 
 function Layout() {
   return (
     <div>
-      <nav>
-        {/* NavLink makes it easy to show active states */}
+      <nav className="flex gap-4 p-4">
         <NavLink
           to="/"
           className={({ isActive }) => (isActive ? "active" : "")}
         >
           Home
         </NavLink>
-
-        <Link to="/character">Character Editor</Link>
+        <NavLink
+          to="/character"
+          className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          New Scene
+        </NavLink>
+        <NavLink
+          to="/scenes"
+          className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          Saved Scenes
+        </NavLink>
       </nav>
       <Outlet />
     </div>
   );
 }
+
 export default function App() {
   return (
     <Router>
@@ -37,6 +48,8 @@ export default function App() {
           <Route index path="/" element={<Game />} />
           <Route path="/objects" element={<ObjectViewer />} />
           <Route path="/character" element={<CharacterEditor />} />
+          <Route path="/scenes" element={<SceneList />} />
+          <Route path="/scenes/:sceneId" element={<CharacterEditor />} />
         </Route>
       </Routes>
     </Router>

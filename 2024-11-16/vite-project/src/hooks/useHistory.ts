@@ -1,42 +1,44 @@
 import { useState, useCallback } from "react";
 
-type HistoryState = SceneObject[];
-type HistoryAction = {
-  type: "PUSH" | "UNDO" | "REDO";
-  payload?: HistoryState;
-};
+interface HistoryState {
+  objects: SceneObject[];
+  groups: Group[];
+}
 
-const useHistory = (initialState: HistoryState) => {
-  const [history, setHistory] = useState<HistoryState[]>([initialState]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+const useHistory = (initialObjects: SceneObject[], initialGroups: Group[]) => {
+  const [index, setIndex] = useState(-1);
+  const [history, setHistory] = useState<HistoryState[]>([]);
 
   const push = useCallback(
-    (newState: HistoryState) => {
-      setHistory((prev) => [...prev.slice(0, currentIndex + 1), newState]);
-      setCurrentIndex((prev) => prev + 1);
+    (objects: SceneObject[], groups: Group[]) => {
+      setHistory((prev) => [...prev.slice(0, index + 1), { objects, groups }]);
+      setIndex((prev) => prev + 1);
     },
-    [currentIndex]
+    [index]
   );
 
   const undo = useCallback(() => {
-    if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
+    if (index > 0) {
+      setIndex((prev) => prev - 1);
+      return history[index - 1];
     }
-  }, [currentIndex]);
+    return null;
+  }, [history, index]);
 
   const redo = useCallback(() => {
-    if (currentIndex < history.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
+    if (index < history.length - 1) {
+      setIndex((prev) => prev + 1);
+      return history[index + 1];
     }
-  }, [currentIndex, history.length]);
+    return null;
+  }, [history, index]);
 
   return {
-    state: history[currentIndex],
     push,
     undo,
     redo,
-    canUndo: currentIndex > 0,
-    canRedo: currentIndex < history.length - 1,
+    canUndo: index > 0,
+    canRedo: index < history.length - 1,
   };
 };
 
