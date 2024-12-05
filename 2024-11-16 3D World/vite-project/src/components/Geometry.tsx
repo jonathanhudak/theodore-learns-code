@@ -43,6 +43,8 @@ interface GeometryProps {
   metalness?: number;
   roughness?: number;
   transformMode: TransformMode;
+  onDuplicate?: (position: THREE.Vector3, objectId: string) => void;
+  sceneOffset: [number, number, number];
 }
 
 // Add transform mode type
@@ -58,6 +60,8 @@ export const Geometry: React.FC<GeometryProps> = ({
   groups,
   isMultiSelectMode,
   transformMode,
+  onDuplicate,
+  sceneOffset,
 }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -84,74 +88,27 @@ export const Geometry: React.FC<GeometryProps> = ({
 
   const handleObjectChange = (event) => {
     if (meshRef.current) {
-      const newPosition = meshRef.current.position.toArray() as [
-        number,
-        number,
-        number
-      ];
-      const newRotation = meshRef.current.rotation.toArray().slice(0, 3) as [
-        number,
-        number,
-        number
-      ];
-      const newScale = meshRef.current.scale.toArray() as [
-        number,
-        number,
-        number
-      ];
+      // Get the world position and convert to local coordinates
+      const worldPosition = meshRef.current.position.clone();
+      const localPosition = [
+        Math.round(worldPosition.x - sceneOffset[0]),
+        Math.round(worldPosition.y - sceneOffset[1]),
+        Math.round(worldPosition.z - sceneOffset[2])
+      ] as [number, number, number];
 
-      // Find if object is part of any selected group
-      const selectedGroup = groups.find((group) =>
-        group.memberIds.includes(obj.id)
+      setObjects((prev) =>
+        prev.map((o) => {
+          if (o.id === obj.id) {
+            return { 
+              ...o, 
+              position: localPosition,
+              rotation: meshRef.current!.rotation.toArray().slice(0, 3) as [number, number, number],
+              scale: meshRef.current!.scale.toArray() as [number, number, number]
+            };
+          }
+          return o;
+        })
       );
-
-      if (selectedGroup) {
-        // Update all objects in the group
-        setObjects((prev) =>
-          prev.map((o) => {
-            if (selectedGroup.memberIds.includes(o.id)) {
-              if (transformMode === "translate") {
-                // Calculate offset from group center
-                const offset = [
-                  newPosition[0] - obj.position[0],
-                  newPosition[1] - obj.position[1],
-                  newPosition[2] - obj.position[2],
-                ];
-
-                return {
-                  ...o,
-                  position: [
-                    o.position[0] + offset[0],
-                    o.position[1] + offset[1],
-                    o.position[2] + offset[2],
-                  ] as [number, number, number],
-                };
-              } else if (transformMode === "rotate") {
-                return { ...o, rotation: newRotation };
-              } else if (transformMode === "scale") {
-                return { ...o, scale: newScale };
-              }
-            }
-            return o;
-          })
-        );
-      } else {
-        // Update single object
-        setObjects((prev) =>
-          prev.map((o) => {
-            if (o.id === obj.id) {
-              const updates = {
-                position:
-                  transformMode === "translate" ? newPosition : o.position,
-                rotation: transformMode === "rotate" ? newRotation : o.rotation,
-                scale: transformMode === "scale" ? newScale : o.scale,
-              };
-              return { ...o, ...updates };
-            }
-            return o;
-          })
-        );
-      }
     }
   };
 
@@ -191,39 +148,108 @@ export const Geometry: React.FC<GeometryProps> = ({
   const calculateSnapPosition = (
     sourceObj: SceneObject,
     intersectionPoint: THREE.Vector3,
-    normal: THREE.Vector3
+    normal: THREE.Vector3,
+    face: THREE.Face
   ): [number, number, number] => {
-    // Get the dimensions of the source object (assuming it's a box)
-    const sourceSize = new THREE.Vector3(1, 1, 1).multiply(
+    if (!meshRef.current) return [0, 0, 0];
+
+    // Get the box dimensions
+    const boxSize = new THREE.Vector3(1, 1, 1).multiply(
       new THREE.Vector3(...sourceObj.scale)
     );
 
-    // Calculate offset based on the object dimensions and normal
-    const offset = new THREE.Vector3(
-      Math.abs(normal.x) * sourceSize.x,
-      Math.abs(normal.y) * sourceSize.y,
-      Math.abs(normal.z) * sourceSize.z
+    // Get the clicked object's world position
+    const objectWorldPos = new THREE.Vector3(...sourceObj.position)
+      .add(new THREE.Vector3(...sceneOffset));
+
+    // Determine which face was clicked based on the normal
+    let faceCenter = objectWorldPos.clone();
+    if (Math.abs(normal.x) > 0.5) {
+      // Side face (X)
+      faceCenter.x += normal.x * boxSize.x * 0.5;
+    } else if (Math.abs(normal.y) > 0.5) {
+      // Top/bottom face (Y)
+      faceCenter.y += normal.y * boxSize.y * 0.5;
+    } else if (Math.abs(normal.z) > 0.5) {
+      // Front/back face (Z)
+      faceCenter.z += normal.z * boxSize.z * 0.5;
+    }
+
+    // Calculate new position by moving one unit in the normal direction
+    const newPosition = faceCenter.clone()
+      .add(normal);
+
+    console.log('Snap calculation:', {
+      boxSize: boxSize.toArray(),
+      objectWorldPos: objectWorldPos.toArray(),
+      normal: normal.toArray(),
+      faceCenter: faceCenter.toArray(),
+      newPosition: newPosition.toArray(),
+      sceneOffset
+    });
+
+    // Convert to local coordinates
+    return [
+      Math.round(newPosition.x - sceneOffset[0]),
+      Math.round(newPosition.y - sceneOffset[1]),
+      Math.round(newPosition.z - sceneOffset[2])
+    ];
+  };
+
+  const handleDoubleClick = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation();
+    
+    if (!onDuplicate || !meshRef.current) return;
+    
+    const intersection = event.intersections?.[0];
+    if (!intersection?.face) {
+      console.log("No valid intersection found", event.intersections);
+      return;
+    }
+
+    // Get the face normal in world space
+    const worldNormal = intersection.face.normal.clone()
+      .applyQuaternion(meshRef.current.quaternion)
+      .normalize();
+
+    console.log('Double click data:', {
+      intersectionPoint: intersection.point.toArray(),
+      worldNormal: worldNormal.toArray(),
+      sourcePosition: obj.position,
+      sceneOffset,
+      objectScale: obj.scale,
+      faceIndex: intersection.faceIndex,
+      face: {
+        a: intersection.face.a,
+        b: intersection.face.b,
+        c: intersection.face.c
+      }
+    });
+
+    // Calculate snap position
+    const snapPosition = calculateSnapPosition(
+      obj,
+      intersection.point,
+      worldNormal,
+      intersection.face
     );
 
-    // Calculate the position that will make the objects flush
-    const sourcePosition = new THREE.Vector3(...sourceObj.position);
-    const newPosition = sourcePosition
-      .clone()
-      .add(normal.clone().multiply(offset));
+    console.log('Calculated snap position:', snapPosition);
 
-    // Round to nearest integer for grid snapping
-    return [
-      Math.round(newPosition.x),
-      Math.round(newPosition.y),
-      Math.round(newPosition.z),
-    ];
+    // Create Vector3 from snap position
+    const position = new THREE.Vector3(...snapPosition);
+    onDuplicate(position, obj.id);
   };
 
   return (
     <>
       {selected && (
         <mesh
-          position={obj.position}
+          position={[
+            obj.position[0] + sceneOffset[0],
+            obj.position[1] + sceneOffset[1],
+            obj.position[2] + sceneOffset[2]
+          ]}
           rotation={obj.rotation}
           scale={[
             obj.scale[0] * 1.05,
@@ -243,7 +269,11 @@ export const Geometry: React.FC<GeometryProps> = ({
 
       <mesh
         ref={meshRef}
-        position={obj.position}
+        position={[
+          obj.position[0] + sceneOffset[0],
+          obj.position[1] + sceneOffset[1],
+          obj.position[2] + sceneOffset[2]
+        ]}
         rotation={obj.rotation}
         scale={obj.scale}
         userData={{ id: obj.id }}
@@ -258,6 +288,7 @@ export const Geometry: React.FC<GeometryProps> = ({
             onDeselect();
           }
         }}
+        onDoubleClick={handleDoubleClick}
       >
         {AVAILABLE_SHAPES[obj.shape]}
         <meshPhysicalMaterial
@@ -266,12 +297,16 @@ export const Geometry: React.FC<GeometryProps> = ({
           roughness={obj.roughness}
         />
       </mesh>
-      {selected && (
+      {selected && meshRef.current && (
         <TransformControls
           object={meshRef.current}
           mode={transformMode}
           onObjectChange={handleObjectChange}
           onMouseUp={handleMouseUp}
+          space="world"
+          showX={true}
+          showY={true}
+          showZ={true}
         />
       )}
     </>

@@ -63,6 +63,7 @@ interface GeometryProps {
   metalness?: number;
   roughness?: number;
   groups: Group[];
+  onDuplicate?: (position: THREE.Vector3, objectId: string) => void;
 }
 
 interface SceneObject extends GeometryProps {
@@ -429,18 +430,70 @@ const CharacterEditor: React.FC = () => {
     "translate" | "rotate" | "scale"
   >("translate");
 
+  // Add new state near the top of the component
+  const [isSceneShiftEnabled, setIsSceneShiftEnabled] = useState(false);
+  const [sceneOffset, setSceneOffset] = useState<[number, number, number]>([0, 0, 0]);
+
+  // Add keyboard controls for scene shifting
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isSceneShiftEnabled) return;
+      
+      const shiftAmount = 1; // Amount to shift per keypress
+      const [x, y, z] = sceneOffset;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          setSceneOffset([x - shiftAmount, y, z]);
+          break;
+        case 'ArrowRight':
+          setSceneOffset([x + shiftAmount, y, z]);
+          break;
+        case 'ArrowUp':
+          setSceneOffset([x, y, z - shiftAmount]);
+          break;
+        case 'ArrowDown':
+          setSceneOffset([x, y, z + shiftAmount]);
+          break;
+        case 'PageUp':
+          setSceneOffset([x, y + shiftAmount, z]);
+          break;
+        case 'PageDown':
+          setSceneOffset([x, y - shiftAmount, z]);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSceneShiftEnabled, sceneOffset]);
+
   const addObject = () => {
+    console.log('Adding object with scene offset:', JSON.stringify({
+      sceneOffset,
+      currentObjects: objects.map(obj => ({
+        id: obj.id,
+        position: obj.position
+      }))
+    }));
+
     const newObject: SceneObject = {
       id: `object-${Date.now()}`,
       shape: selectedShape,
-      position: [0, 1, 0],
+      position: [
+        0 - sceneOffset[0],
+        1 - sceneOffset[1],
+        0 - sceneOffset[2]
+      ] as [number, number, number],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
       color: "#ffffff",
       groups: [],
     };
+
+    console.log('New object:', JSON.stringify(newObject, null, 2));
     setObjects((prev) => [...prev, newObject]);
-    pushHistory([...objects, newObject]); // Push new state to history
+    pushHistory([...objects, newObject]);
   };
 
   const deleteSelected = () => {
@@ -788,6 +841,52 @@ const CharacterEditor: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const handleDuplicate = (position: THREE.Vector3, objectId: string) => {
+    console.log('Duplicating object:', JSON.stringify({
+      position: {
+        x: position.x,
+        y: position.y,
+        z: position.z
+      },
+      objectId,
+      sceneOffset,
+      sourceObject: objects.find(obj => obj.id === objectId),
+      allObjects: objects.map(obj => ({
+        id: obj.id,
+        position: obj.position
+      }))
+    }, null, 2));
+    
+    const objectToDuplicate = objects.find(obj => obj.id === objectId);
+    if (!objectToDuplicate) return;
+
+    // Create new object with position in local coordinates
+    const newObject: SceneObject = {
+      ...objectToDuplicate,
+      id: `object-${Date.now()}`,
+      position: [
+        Math.round(position.x),
+        Math.round(position.y),
+        Math.round(position.z)
+      ] as [number, number, number],
+      rotation: [...objectToDuplicate.rotation] as [number, number, number],
+      scale: [...objectToDuplicate.scale] as [number, number, number],
+      groups: []
+    };
+
+    console.log('Created duplicate:', JSON.stringify({
+      newObject,
+      sceneOffset,
+      allObjectsAfter: [...objects, newObject].map(obj => ({
+        id: obj.id,
+        position: obj.position
+      }))
+    }, null, 2));
+
+    setObjects(prev => [...prev, newObject]);
+    setSelectedIds([newObject.id]);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
       <div className="absolute z-10 p-4 bg-white dark:bg-gray-800 rounded shadow-md">
@@ -818,6 +917,34 @@ const CharacterEditor: React.FC = () => {
                   placeholder="Scene name"
                   className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
                 />
+              </div>
+              <div className="flex gap-2 items-center mb-4 w-full">
+                <button
+                  onClick={() => setIsSceneShiftEnabled(!isSceneShiftEnabled)}
+                  className={`px-4 py-2 rounded ${
+                    isSceneShiftEnabled
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+                  }`}
+                  title="Toggle scene shifting mode (use arrow keys to move scene)"
+                >
+                  {isSceneShiftEnabled ? "✓ Scene Shift" : "□ Scene Shift"}
+                </button>
+                {isSceneShiftEnabled && (
+                  <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded text-sm">
+                    Offset: [{sceneOffset.join(', ')}]
+                  </div>
+                )}
+                {/* Add Debug Info */}
+                <div className="px-4 py-2 bg-gray-800 text-white rounded text-sm font-mono w-full">
+                  <pre>
+                    {JSON.stringify({
+                      sceneOffset,
+                      selectedObject: objects.find(obj => selectedIds.includes(obj.id)),
+                      lastAddedObject: objects[objects.length - 1],
+                    }, null, 2)}
+                  </pre>
+                </div>
               </div>
               <button
                 onClick={saveScene}
@@ -1158,63 +1285,68 @@ const CharacterEditor: React.FC = () => {
       >
         <color attach="background" args={["#202020"]} />
         <Physics>
-          {lights.map((light) => (
-            <Light
-              key={light.id}
-              light={light}
-              selected={selectedLightId === light.id}
-              onSelect={() => {
-                setSelectedLightId(light.id);
-                setSelectedIds([]); // Clear object selection when selecting a light
-              }}
-              onDeselect={() => setSelectedLightId(null)}
-              onUpdate={(updates) => updateLight(light.id, updates)}
-            />
-          ))}
-          {objects.map((obj) => {
-            const selectedGroup = groups.find(
-              (group) =>
-                selectedIds.includes(group.id) &&
-                group.memberIds.includes(obj.id)
-            );
-
-            return (
-              <Geometry
-                key={obj.id}
-                obj={obj}
-                selected={
-                  selectedIds.includes(obj.id) || selectedGroup !== undefined
-                }
-                isMultiSelectMode={isMultiSelectMode}
-                transformMode={transformMode}
-                onSelect={(e) => {
-                  e.stopPropagation();
-                  if (isMultiSelectMode) {
-                    // In multi-select mode, toggle selection
-                    setSelectedIds((prev) => {
-                      if (prev.includes(obj.id)) {
-                        return prev.filter((id) => id !== obj.id);
-                      } else {
-                        return [...prev, obj.id];
-                      }
-                    });
-                  } else {
-                    // Single select mode
-                    setSelectedLightId(null);
-                    setSelectedIds([obj.id]);
-                  }
+          <group position={sceneOffset}>
+            {lights.map((light) => (
+              <Light
+                key={light.id}
+                light={light}
+                selected={selectedLightId === light.id}
+                onSelect={() => {
+                  setSelectedLightId(light.id);
+                  setSelectedIds([]); // Clear object selection when selecting a light
                 }}
-                onDeselect={() => {
-                  if (!isMultiSelectMode) {
-                    setSelectedIds([]);
-                  }
-                }}
-                setObjects={setObjects}
-                setSelectedIds={setSelectedIds}
-                groups={groups}
+                onDeselect={() => setSelectedLightId(null)}
+                onUpdate={(updates) => updateLight(light.id, updates)}
               />
-            );
-          })}
+            ))}
+            {objects.map((obj) => {
+              // Find if object is part of any selected group
+              const selectedGroup = groups.find(
+                (group) =>
+                  selectedIds.includes(group.id) &&
+                  group.memberIds.includes(obj.id)
+              );
+
+              return (
+                <Geometry
+                  key={obj.id}
+                  obj={obj}
+                  sceneOffset={sceneOffset}
+                  selected={
+                    selectedIds.includes(obj.id) || selectedGroup !== undefined
+                  }
+                  isMultiSelectMode={isMultiSelectMode}
+                  transformMode={transformMode}
+                  onSelect={(e) => {
+                    e.stopPropagation();
+                    if (isMultiSelectMode) {
+                      // In multi-select mode, toggle selection
+                      setSelectedIds((prev) => {
+                        if (prev.includes(obj.id)) {
+                          return prev.filter((id) => id !== obj.id);
+                        } else {
+                          return [...prev, obj.id];
+                        }
+                      });
+                    } else {
+                      // Single select mode
+                      setSelectedLightId(null);
+                      setSelectedIds([obj.id]);
+                    }
+                  }}
+                  onDeselect={() => {
+                    if (!isMultiSelectMode) {
+                      setSelectedIds([]);
+                    }
+                  }}
+                  setObjects={setObjects}
+                  setSelectedIds={setSelectedIds}
+                  groups={groups}
+                  onDuplicate={handleDuplicate}
+                />
+              );
+            })}
+          </group>
         </Physics>
         <OrbitControls makeDefault />
       </Canvas>
